@@ -84,7 +84,7 @@ type CSRSource interface {
 // The method implements every single part of the ACME flow described in RFC 8555 §7.1 with the
 // exception of "Create account" because this method signature does not have a way to return
 // the updated account object. The account's status MUST be "valid" in order to succeed.
-func (c *Client) ObtainCertificateUsingCSRSource(ctx context.Context, account acme.Account, identifiers []acme.Identifier, source CSRSource) ([]acme.Certificate, error) {
+func (c *Client) ObtainCertificateUsingCSRSource(ctx context.Context, account acme.Account, identifiers []acme.Identifier, source CSRSource, validityPeriod time.Duration) ([]acme.Certificate, error) {
 	if account.Status != acme.StatusValid {
 		return nil, fmt.Errorf("account status is not valid: %s", account.Status)
 	}
@@ -93,7 +93,13 @@ func (c *Client) ObtainCertificateUsingCSRSource(ctx context.Context, account ac
 	}
 
 	var err error
+
 	order := acme.Order{Identifiers: identifiers}
+
+	if validityPeriod != 0 {
+		notAfter := time.Now().Add(validityPeriod)
+		order.NotAfter = &notAfter
+	}
 
 	// remember which challenge types failed for which identifiers
 	// so we can retry with other challenge types
@@ -250,7 +256,7 @@ var _ CSRSource = (*csrSource)(nil)
 //
 // As far as SANs go, this method currently only supports DNSNames, IPAddresses, Permanent
 // Identifiers and Hardware Module Names on the CSR.
-func (c *Client) ObtainCertificateUsingCSR(ctx context.Context, account acme.Account, csr *x509.CertificateRequest) ([]acme.Certificate, error) {
+func (c *Client) ObtainCertificateUsingCSR(ctx context.Context, account acme.Account, csr *x509.CertificateRequest, validityPeriod time.Duration) ([]acme.Certificate, error) {
 	if csr == nil {
 		return nil, errors.New("missing CSR")
 	}
@@ -267,7 +273,7 @@ func (c *Client) ObtainCertificateUsingCSR(ctx context.Context, account acme.Acc
 		csr: csr,
 	}
 
-	return c.ObtainCertificateUsingCSRSource(ctx, account, ids, csrSource)
+	return c.ObtainCertificateUsingCSRSource(ctx, account, ids, csrSource, validityPeriod)
 }
 
 // ObtainCertificate is the same as ObtainCertificateUsingCSR, except it is a slight wrapper
@@ -311,8 +317,8 @@ func (c *Client) ObtainCertificate(ctx context.Context, account acme.Account, ce
 	if err != nil {
 		return nil, fmt.Errorf("parsing generated CSR: %v", err)
 	}
-
-	return c.ObtainCertificateUsingCSR(ctx, account, csr)
+	// TODO: handle ValidityPeriod
+	return c.ObtainCertificateUsingCSR(ctx, account, csr, 0)
 }
 
 // getAuthzObjects constructs stateful authorization objects for each authz on the order.
